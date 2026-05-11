@@ -10,6 +10,7 @@ import {
   History
 } from 'lucide-react';
 import './index.css';
+import { List } from 'react-window';
 
 
 
@@ -151,20 +152,24 @@ function App() {
         </div>
 
         <div className="word-list">
-          {wordList
-            .filter(item => item.word.toLowerCase().startsWith(activeLetter.toLowerCase()))
-            .map((item, idx) => (
-              <div key={idx} className="word-item">
+
+          <List
+            rowComponent={({ index: idx, style }) => (
+              <div key={idx} className="word-item" style={style}>
                 <div className="word-info">
                   <div className="word-header">
-                    <span className="word-title">{item.word}</span>
-                    <span className="word-type">{item.type}</span>
+                    <span className="word-title">{wordList?.[idx].word}</span>
+                    <span className="word-type">{wordList?.[idx].type}</span>
                   </div>
-                  <span className="word-def">{item.def}</span>
+                  <span className="word-def">{wordList?.[idx].def}</span>
                 </div>
                 <ChevronRight size={20} className="chevron-icon" />
               </div>
-            ))}
+            )}
+            rowCount={wordList.length}
+            rowHeight={75}
+            rowProps={{ wordList }}
+          />
         </div>
       </main>
 
