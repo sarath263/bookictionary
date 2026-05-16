@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   Menu,
   Bookmark,
@@ -14,7 +14,10 @@ import {
   Share2,
   Moon,
   Sun,
-  Monitor
+  Monitor,
+  ArrowLeft,
+  Volume2,
+  Clock
 } from 'lucide-react';
 import './index.css';
 import { List } from 'react-window';
@@ -24,12 +27,157 @@ import { List } from 'react-window';
 const alphabet = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i));
 let allData = {};
 
+// Cache for full word data from JSON files
+const fullDataCache = {};
+
+function WordDetail({ wordEntry, onBack }) {
+  const [fullData, setFullData] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadFullData = async () => {
+      setLoading(true);
+      const letter = wordEntry.word[0].toLowerCase();
+
+      // Check cache first
+      if (fullDataCache[letter]) {
+        const entry = fullDataCache[letter][wordEntry.word] || fullDataCache[letter][wordEntry.word.toUpperCase()];
+        if (!cancelled) {
+          setFullData(entry || null);
+          setLoading(false);
+        }
+        return;
+      }
+
+      try {
+        const module = await import(`./assets/data/${letter}.json`);
+        const data = module.default || module;
+        fullDataCache[letter] = data;
+        const entry = data[wordEntry.word] || data[wordEntry.word.toUpperCase()];
+        if (!cancelled) {
+          setFullData(entry || null);
+          setLoading(false);
+        }
+      } catch (err) {
+        console.error('Failed to load word data:', err);
+        if (!cancelled) {
+          setFullData(null);
+          setLoading(false);
+        }
+      }
+    };
+
+    loadFullData();
+    return () => { cancelled = true; };
+  }, [wordEntry]);
+
+  const wordName = wordEntry.word.charAt(0).toUpperCase() + wordEntry.word.slice(1).toLowerCase();
+
+  if (loading) {
+    return (
+      <div className="word-detail">
+        <div className="word-detail-header">
+          <button className="icon-button back-button" onClick={onBack}>
+            <ArrowLeft size={22} />
+          </button>
+          <span className="word-detail-title">{wordName}</span>
+        </div>
+        <div className="word-detail-loading">Loading...</div>
+      </div>
+    );
+  }
+
+  const meanings = fullData?.MEANINGS || {};
+  const synonyms = fullData?.SYNONYMS || [];
+  const antonyms = fullData?.ANTONYMS || [];
+  const meaningEntries = Object.values(meanings);
+
+  return (
+    <div className="word-detail">
+      <div className="word-detail-header">
+        <button className="icon-button back-button" onClick={onBack}>
+          <ArrowLeft size={22} />
+        </button>
+        <div className="word-detail-header-right">
+          <button className="icon-button">
+            <Volume2 size={20} />
+          </button>
+          <button className="icon-button">
+            <Bookmark size={20} />
+          </button>
+        </div>
+      </div>
+
+      <div className="word-detail-body">
+        <h2 className="word-detail-title">{wordName}</h2>
+
+        {meaningEntries.length > 0 ? (
+          <div className="word-detail-meanings">
+            {meaningEntries.map((meaning, idx) => {
+              const [type, definition, related, examples] = meaning;
+              return (
+                <div key={idx} className="meaning-block">
+                  <div className="meaning-header">
+                    <span className="meaning-number">{idx + 1}</span>
+                    {type && <span className="meaning-type">{type}</span>}
+                  </div>
+                  <p className="meaning-definition">{definition}</p>
+                  {examples && examples.length > 0 && (
+                    <div className="meaning-examples">
+                      {examples.map((ex, i) => (
+                        <p key={i} className="meaning-example">"{ex}"</p>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="meaning-definition" style={{ marginTop: 16 }}>
+            {wordEntry.def || 'No definition available.'}
+          </p>
+        )}
+
+        {synonyms.length > 0 && (
+          <div className="word-detail-section">
+            <h3 className="section-label">Synonyms</h3>
+            <div className="chip-container">
+              {synonyms.filter(s => s.toLowerCase() !== wordEntry.word.toLowerCase()).map((syn, i) => (
+                <span key={i} className="chip chip-synonym">{syn}</span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {antonyms.length > 0 && (
+          <div className="word-detail-section">
+            <h3 className="section-label">Antonyms</h3>
+            <div className="chip-container">
+              {antonyms.map((ant, i) => (
+                <span key={i} className="chip chip-antonym">{ant}</span>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const [activeLetter, setActiveLetter] = useState('A');
   const [activeTab, setActiveTab] = useState('Words');
   const [wordList, setWordList] = useState([]);
   const [dbUpdatedCounter, setDbUpdatedCounter] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [selectedWord, setSelectedWord] = useState(null);
+  const [history, setHistory] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('wordHistory') || '[]');
+    } catch { return []; }
+  });
   const [theme, setTheme] = useState(() => {
     return localStorage.getItem('theme') || 'system';
   });
@@ -69,6 +217,26 @@ function App() {
     if (theme === 'dark') return 'Dark Theme';
     return 'Device Theme';
   };
+
+  // Handle word selection — add to history + show detail
+  const handleWordClick = useCallback((wordEntry) => {
+    setSelectedWord(wordEntry);
+
+    // Add to history (no duplicates, most recent first, max 100)
+    setHistory(prev => {
+      const filtered = prev.filter(h => h.word !== wordEntry.word);
+      const updated = [
+        { word: wordEntry.word, type: wordEntry.type, def: wordEntry.def, lowerWord: wordEntry.lowerWord, timestamp: Date.now() },
+        ...filtered
+      ].slice(0, 100);
+      localStorage.setItem('wordHistory', JSON.stringify(updated));
+      return updated;
+    });
+  }, []);
+
+  const handleBack = useCallback(() => {
+    setSelectedWord(null);
+  }, []);
 
   // Initialize Web Worker for background pre-fetching
   useEffect(() => {
@@ -159,6 +327,45 @@ function App() {
     return () => { isMounted = false; };
   }, [activeLetter, dbUpdatedCounter]);
 
+  // Clear selected word when letter changes
+  useEffect(() => {
+    setSelectedWord(null);
+  }, [activeLetter]);
+
+  // Render the history tab content
+  const renderHistoryList = () => {
+    if (history.length === 0) {
+      return (
+        <div className="empty-state">
+          <Clock size={48} />
+          <p>No history yet</p>
+          <span>Words you look up will appear here</span>
+        </div>
+      );
+    }
+
+    return (
+      <div className="history-list">
+        {history.map((entry, idx) => (
+          <div
+            key={`${entry.word}-${idx}`}
+            className="word-item"
+            onClick={() => handleWordClick(entry)}
+          >
+            <div className="word-info">
+              <div className="word-header">
+                <span className="word-title">{entry.word}</span>
+                {entry.type && <span className="word-type">{entry.type}</span>}
+              </div>
+              <span className="word-def">{entry.def}</span>
+            </div>
+            <ChevronRight size={20} className="chevron-icon" />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   return (
     <>
       <header className="header">
@@ -186,65 +393,85 @@ function App() {
       </div>
 
       <main className="main-content">
-        <div className="alphabet-index">
-          {alphabet.map(letter => (
-            <div
-              key={letter}
-              className={`letter ${activeLetter === letter ? 'active' : ''}`}
-              onClick={() => setActiveLetter(letter)}
-            >
-              {letter}
-            </div>
-          ))}
-        </div>
-
-        <div className="word-list">
-
-          <List
-            rowComponent={({ index: idx, style }) => (
-              <div key={idx} className="word-item" style={style}>
-                <div className="word-info">
-                  <div className="word-header">
-                    <span className="word-title">{wordList?.[idx].word}</span>
-                    <span className="word-type">{wordList?.[idx].type}</span>
-                  </div>
-                  <span className="word-def">{wordList?.[idx].def}</span>
-                </div>
-                <ChevronRight size={20} className="chevron-icon" />
-              </div>
+        {activeTab === 'History' ? (
+          <div className="word-list" style={{ width: '100%' }}>
+            {selectedWord ? (
+              <WordDetail wordEntry={selectedWord} onBack={handleBack} />
+            ) : (
+              renderHistoryList()
             )}
-            rowCount={wordList.length}
-            rowHeight={75}
-            rowProps={{ wordList }}
-          />
-        </div>
+          </div>
+        ) : (
+          <>
+            <div className="alphabet-index">
+              {alphabet.map(letter => (
+                <div
+                  key={letter}
+                  className={`letter ${activeLetter === letter ? 'active' : ''}`}
+                  onClick={() => setActiveLetter(letter)}
+                >
+                  {letter}
+                </div>
+              ))}
+            </div>
+
+            <div className="word-list">
+              {selectedWord ? (
+                <WordDetail wordEntry={selectedWord} onBack={handleBack} />
+              ) : (
+                <List
+                  rowComponent={({ index: idx, style }) => (
+                    <div
+                      key={idx}
+                      className="word-item"
+                      style={style}
+                      onClick={() => handleWordClick(wordList[idx])}
+                    >
+                      <div className="word-info">
+                        <div className="word-header">
+                          <span className="word-title">{wordList?.[idx].word}</span>
+                          <span className="word-type">{wordList?.[idx].type}</span>
+                        </div>
+                        <span className="word-def">{wordList?.[idx].def}</span>
+                      </div>
+                      <ChevronRight size={20} className="chevron-icon" />
+                    </div>
+                  )}
+                  rowCount={wordList.length}
+                  rowHeight={75}
+                  rowProps={{ wordList }}
+                />
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       <nav className="bottom-nav">
         <div
           className={`nav-item ${activeTab === 'Home' ? 'active' : ''}`}
-          onClick={() => setActiveTab('Home')}
+          onClick={() => { setActiveTab('Home'); setSelectedWord(null); }}
         >
           <Home size={24} />
           <span>Home</span>
         </div>
         <div
           className={`nav-item ${activeTab === 'Words' ? 'active' : ''}`}
-          onClick={() => setActiveTab('Words')}
+          onClick={() => { setActiveTab('Words'); setSelectedWord(null); }}
         >
           <BookOpen size={24} />
           <span>Words</span>
         </div>
         <div
           className={`nav-item ${activeTab === 'Bookmarks' ? 'active' : ''}`}
-          onClick={() => setActiveTab('Bookmarks')}
+          onClick={() => { setActiveTab('Bookmarks'); setSelectedWord(null); }}
         >
           <Bookmark size={24} />
           <span>Bookmarks</span>
         </div>
         <div
           className={`nav-item ${activeTab === 'History' ? 'active' : ''}`}
-          onClick={() => setActiveTab('History')}
+          onClick={() => { setActiveTab('History'); setSelectedWord(null); }}
         >
           <History size={24} />
           <span>History</span>
