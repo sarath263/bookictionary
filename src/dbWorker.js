@@ -2,7 +2,7 @@ const alphabet = Array.from({ length: 26 }, (_, i) => String.fromCharCode(97 + i
 
 self.onmessage = async (e) => {
   if (e.data.type === 'START_PREFETCH') {
-    const request = indexedDB.open('DictionaryDB', 3);
+    const request = indexedDB.open('DictionaryDB', 6);
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;

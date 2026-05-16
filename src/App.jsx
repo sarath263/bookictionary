@@ -7,7 +7,14 @@ import {
   ChevronRight,
   Home,
   BookOpen,
-  History
+  History,
+  X,
+  Settings,
+  Info,
+  Share2,
+  Moon,
+  Sun,
+  Monitor
 } from 'lucide-react';
 import './index.css';
 import { List } from 'react-window';
@@ -22,6 +29,46 @@ function App() {
   const [activeTab, setActiveTab] = useState('Words');
   const [wordList, setWordList] = useState([]);
   const [dbUpdatedCounter, setDbUpdatedCounter] = useState(0);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(() => {
+    return localStorage.getItem('theme') || 'system';
+  });
+
+  useEffect(() => {
+    localStorage.setItem('theme', theme);
+    const root = document.documentElement;
+    const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+
+    const applyTheme = () => {
+      if (theme === 'system') {
+        root.setAttribute('data-theme', mediaQuery.matches ? 'dark' : 'light');
+      } else {
+        root.setAttribute('data-theme', theme);
+      }
+    };
+
+    applyTheme();
+    mediaQuery.addEventListener('change', applyTheme);
+    return () => mediaQuery.removeEventListener('change', applyTheme);
+  }, [theme]);
+
+  const toggleTheme = () => {
+    if (theme === 'light') setTheme('dark');
+    else if (theme === 'dark') setTheme('system');
+    else setTheme('light');
+  };
+
+  const getThemeIcon = () => {
+    if (theme === 'light') return <Sun size={20} />;
+    if (theme === 'dark') return <Moon size={20} />;
+    return <Monitor size={20} />;
+  };
+
+  const getThemeLabel = () => {
+    if (theme === 'light') return 'Light Theme';
+    if (theme === 'dark') return 'Dark Theme';
+    return 'Device Theme';
+  };
 
   // Initialize Web Worker for background pre-fetching
   useEffect(() => {
@@ -51,7 +98,7 @@ function App() {
     const loadData = () => {
       const letterLower = activeLetter.toLowerCase();
 
-      const request = indexedDB.open('DictionaryDB', 3);
+      const request = indexedDB.open('DictionaryDB', 6);
 
       request.onupgradeneeded = (event) => {
         const db = event.target.result;
@@ -115,7 +162,7 @@ function App() {
   return (
     <>
       <header className="header">
-        <button className="icon-button">
+        <button className="icon-button" onClick={() => setIsMenuOpen(true)}>
           <Menu size={24} />
         </button>
         <h1>English Dictionary</h1>
@@ -203,6 +250,34 @@ function App() {
           <span>History</span>
         </div>
       </nav>
+
+      <div className={`drawer-backdrop ${isMenuOpen ? 'open' : ''}`} onClick={() => setIsMenuOpen(false)}></div>
+      <div className={`side-drawer ${isMenuOpen ? 'open' : ''}`}>
+        <div className="drawer-header">
+          <h2>Menu</h2>
+          <button className="icon-button" onClick={() => setIsMenuOpen(false)}>
+            <X size={24} />
+          </button>
+        </div>
+        <div className="drawer-menu">
+          <div className="drawer-item">
+            <Settings size={20} />
+            <span>Settings</span>
+          </div>
+          <div className="drawer-item" onClick={toggleTheme}>
+            {getThemeIcon()}
+            <span>{getThemeLabel()}</span>
+          </div>
+          <div className="drawer-item">
+            <Share2 size={20} />
+            <span>Share App</span>
+          </div>
+          <div className="drawer-item">
+            <Info size={20} />
+            <span>About</span>
+          </div>
+        </div>
+      </div>
     </>
   );
 }
