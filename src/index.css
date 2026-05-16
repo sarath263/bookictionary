@@ -803,3 +803,48 @@ body {
   font-size: 14px;
   color: var(--text-tertiary);
 }
+
+/* Skeleton Loading */
+@keyframes shimmer {
+  0% { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-container {
+  padding: 8px 0;
+  width: 100%;
+}
+
+.skeleton-item {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  height: 75px;
+  box-sizing: border-box;
+  animation: fadeInScale 0.3s ease both;
+}
+
+.skeleton-info {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.skeleton-line {
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--bg-search) 25%, var(--bg-glass-hover) 50%, var(--bg-search) 75%);
+  background-size: 800px 100%;
+  animation: shimmer 1.5s infinite ease-in-out;
+}
+
+.skeleton-title {
+  width: 40%;
+  height: 18px;
+}
+
+.skeleton-def {
+  width: 75%;
+  height: 14px;
+}

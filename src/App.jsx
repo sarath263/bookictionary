@@ -170,6 +170,7 @@ function App() {
   const [activeLetter, setActiveLetter] = useState('A');
   const [activeTab, setActiveTab] = useState('Words');
   const [wordList, setWordList] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [dbUpdatedCounter, setDbUpdatedCounter] = useState(0);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [selectedWord, setSelectedWord] = useState(null);
@@ -262,6 +263,50 @@ function App() {
   // Load words from IndexedDB when activeLetter changes or DB is updated
   useEffect(() => {
     let isMounted = true;
+    setIsLoading(true);
+
+    // Fallback: load directly from JSON files
+    const loadFromJSON = async () => {
+      try {
+        const letterLower = activeLetter.toLowerCase();
+        const module = await import(`./assets/data/${letterLower}.json`);
+        const dict = module.default || module;
+        
+        // Cache for detail view too
+        fullDataCache[letterLower] = dict;
+
+        const parsedWords = [];
+        for (const [word, details] of Object.entries(dict)) {
+          const meanings = details.MEANINGS || {};
+          const meaningKeys = Object.keys(meanings);
+          if (meaningKeys.length > 0) {
+            const meaningArr = meanings[meaningKeys[0]];
+            parsedWords.push({
+              word,
+              lowerWord: word.toLowerCase(),
+              type: meaningArr[0] || '',
+              def: meaningArr[1] || ''
+            });
+          } else {
+            parsedWords.push({
+              word,
+              lowerWord: word.toLowerCase(),
+              type: '',
+              def: 'No definition available.'
+            });
+          }
+        }
+
+        if (isMounted) {
+          allData[activeLetter] = parsedWords;
+          setWordList(parsedWords);
+          setIsLoading(false);
+        }
+      } catch (err) {
+        console.error('Error loading from JSON:', err);
+        if (isMounted) setIsLoading(false);
+      }
+    };
 
     const loadData = () => {
       const letterLower = activeLetter.toLowerCase();
@@ -281,7 +326,11 @@ function App() {
 
       request.onsuccess = (event) => {
         const db = event.target.result;
-        if (!db.objectStoreNames.contains('words')) return;
+        if (!db.objectStoreNames.contains('words')) {
+          // DB not ready yet, load from JSON directly
+          loadFromJSON();
+          return;
+        }
 
         try {
           const tx = db.transaction('words', 'readonly');
@@ -298,8 +347,14 @@ function App() {
                 const results = getAllReq.result.filter(item =>
                   item.lowerWord.startsWith(prefix)
                 );
-                allData[activeLetter] = results;
-                setWordList(results);
+                if (results.length > 0) {
+                  allData[activeLetter] = results;
+                  setWordList(results);
+                  setIsLoading(false);
+                } else {
+                  // IndexedDB is empty for this letter, load from JSON
+                  loadFromJSON();
+                }
               }
             };
           } else {
@@ -309,18 +364,30 @@ function App() {
                 const results = getAllReq.result.filter(item =>
                   (item.lowerWord || item.word.toLowerCase()).startsWith(letterLower)
                 );
-                allData[activeLetter] = results;
-                setWordList(results);
+                if (results.length > 0) {
+                  allData[activeLetter] = results;
+                  setWordList(results);
+                  setIsLoading(false);
+                } else {
+                  loadFromJSON();
+                }
               }
             };
           }
         } catch (e) {
           console.error("Error querying IndexedDB", e);
+          loadFromJSON();
         }
       };
+
+      request.onerror = () => {
+        loadFromJSON();
+      };
     };
+
     if (allData?.[activeLetter]?.length > 0) {
       setWordList(allData[activeLetter]);
+      setIsLoading(false);
     } else {
       loadData();
     }
@@ -418,6 +485,17 @@ function App() {
             <div className="word-list">
               {selectedWord ? (
                 <WordDetail wordEntry={selectedWord} onBack={handleBack} />
+              ) : isLoading && wordList.length === 0 ? (
+                <div className="skeleton-container">
+                  {Array.from({ length: 10 }).map((_, i) => (
+                    <div key={i} className="skeleton-item" style={{ animationDelay: `${i * 0.05}s` }}>
+                      <div className="skeleton-info">
+                        <div className="skeleton-line skeleton-title"></div>
+                        <div className="skeleton-line skeleton-def"></div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <List
                   rowComponent={({ index: idx, style }) => (
